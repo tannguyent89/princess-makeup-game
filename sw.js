@@ -1,6 +1,6 @@
 /* Offline copy of the game. Fresh files win when online; the saved copy is used when the network is away. */
-const CACHE = 'princess-world-v2';
-const FILES = ['./', 'index.html', 'style.css', 'game.js', 'hair.js', 'salon.js', 'world.js', 'pets.js', 'castle.js', 'events.js', 'gallery.js', 'ui.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
+const CACHE = 'princess-world-v3';
+const FILES = ['./', 'index.html', 'style.css', 'game.js', 'hair.js', 'salon.js', 'world.js', 'pets.js', 'castle.js', 'events.js', 'gallery.js', 'tail.js', 'ui.js', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 const FONTS = ['https://fonts.googleapis.com', 'https://fonts.gstatic.com'];
 
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting())); });

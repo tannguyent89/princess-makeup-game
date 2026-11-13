@@ -123,6 +123,7 @@ function renderOpts() {
   const st = STUDIOS[save.stage], tab = curTab(), box = $('#opts'), n = st.tabs.indexOf(tab);
   document.querySelectorAll('.tab[data-tab]').forEach((b, k) => b.setAttribute('aria-selected', k === n));
   $('#stage').classList.toggle('tooling', !!tab.tools);
+  $('#stage').dataset.zoom = tab.zoom || st.zoom;          // a tab may move the camera (the tail studio zooms in for painting)
   if (tab.tools) {
     if (!tab.tools.some(t => t.id === ui.tool)) ui.tool = tab.tools[0].id;
     box.className = 'opts tools';
@@ -268,6 +269,7 @@ document.addEventListener('input', e => {
   if (!e.target.matches('[data-hue]')) return;
   const c = hsl2hex(+e.target.value); e.target.style.setProperty('--thumb', c);
   if (save.stage === 'art') { art.color = c; if (art.mode === 'eraser' || art.mode === 'stamp') art.mode = 'brush'; document.querySelectorAll('#aopts .sw').forEach(b => b.setAttribute('aria-pressed', 'false')); return; }
+  if (save.stage === 'tail' && curTab().tools) { ui.scaleC = c; ui.tool = 'paint'; selectTool('paint'); document.querySelectorAll('#opts .sw').forEach(b => b.setAttribute('aria-pressed', 'false')); return; }
   if (save.stage === 'nails') { ui.nail.mode = 'polish'; ui.nail.color = c; document.querySelectorAll('#nopts [aria-pressed="true"]').forEach(b => b.setAttribute('aria-pressed', 'false')); return; }
   applyChoice(curTab(), c, true, hueLive); hueLive = true;
 });

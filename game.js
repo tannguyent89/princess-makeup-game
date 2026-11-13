@@ -168,7 +168,8 @@ function dressParts(s, P) {
   let u = `<defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs>`, o = '', sil = '';
   const hem = d => `<path d="${d}" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-dasharray="0.1 11" opacity=".9"/>`;
   const long = !['short', 'tutu', 'casual', 'pants'].includes(D.k);
-  switch (D.k) {
+  if (s.tailOn) sil = 'M172,366 H228 V382 H172Z';      // a mermaid wears only the top; her tail replaces the skirt
+  else switch (D.k) {
     case 'ball': sil = 'M172,370 C118,430 68,556 60,622 Q200,660 340,622 C332,556 282,430 228,370Z';
       u += `<path d="${sil}" fill="${fill}"/><path d="M190,372 C172,460 162,560 160,640 Q200,648 240,640 C238,560 228,460 210,372Z" fill="${t}" opacity=".38"/>` + hem('M68,612 Q200,648 332,612'); break;
     case 'aline': sil = 'M174,370 C150,440 120,540 106,616 Q200,644 294,616 C280,540 250,440 226,370Z';
@@ -255,10 +256,9 @@ function dollInner(s, poseIdx) {
   const p = PMAP[s.princess], P = POSES[poseIdx ?? s.pose ?? 0] || POSES[0], sk = p.skin, skD = shade(sk, -.16);
   const hair = hairParts(s), dress = dressParts(s, P), arms = [P.L, P.R];
   // body
-  let b = `<path d="M186,396 L184,640 M214,396 L216,640" stroke="${sk}" stroke-width="18" stroke-linecap="round"/>`;
-  b += (SHOE[s.shoes] || SHOE.flats)(184) + (SHOE[s.shoes] || SHOE.flats)(216);
+  let b = s.tailOn ? '' : `<path d="M186,396 L184,640 M214,396 L216,640" stroke="${sk}" stroke-width="18" stroke-linecap="round"/>` + (SHOE[s.shoes] || SHOE.flats)(184) + (SHOE[s.shoes] || SHOE.flats)(216);
   b += `<path d="M186,258 L186,282 Q172,286 164,298 L172,400 L228,400 L236,298 Q228,286 214,282 L214,258Z" fill="${sk}"/><path d="M186,262 Q200,278 214,262 L214,270 Q200,286 186,270Z" fill="${skD}" opacity=".45"/>`;
-  b += dress.under;
+  b += dress.under + (s.tailOn ? tailSvg(s) : '');
   b += arms.map(A => `<path d="${armD(A)}" pathLength="100" fill="none" stroke="${sk}" stroke-width="19" stroke-linecap="round"/>`).join('');
   const gl = GLOVE[s.gloves];
   b += dress.over + stickersSvg(s);
@@ -360,14 +360,17 @@ const STUDIOS = {
     { key: 'cape', label: '🧚 Magic capes', items: CAPEL, vb: '20 250 360 420', fx: [200, 480] },
   ] },
 };
-const ORDER = ['world', 'choose', 'kingdom', 'salon', 'fashion', 'spa', 'cut', 'hair', 'makeup', 'facial', 'nails', 'designer', 'dress', 'extras', 'runway', 'pets', 'petcare', 'castle', 'events', 'prep', 'eventfit', 'party', 'gallery', 'art'];
+const ORDER = ['world', 'choose', 'kingdom', 'salon', 'fashion', 'spa', 'cut', 'hair', 'makeup', 'facial', 'nails', 'designer', 'dress', 'extras', 'runway', 'tail', 'pets', 'petcare', 'castle', 'events', 'prep', 'eventfit', 'party', 'gallery', 'art'];
 
 /* ---------- 5. state & sound ---------- */
 const KEY = 'moonpetal-salon-v1';
 const freshLook = p => ({ princess: p.id, lips: null, shadow: null, blush: null, liner: 'natural', lashes: 'sweet', eyes: p.eyes, deco: 'none', hair: p.hair, hairColor: p.hairColor, hairAcc: 'none', crown: 'none', dress: p.dress, dressColor: null, shoes: 'flats', gloves: 'none', necklace: 'none', earrings: 'none', bracelet: 'none', wings: 'none', cape: 'none', wand: 'none', bag: 'none', flower: 'none', jewel: 'none', pose: 0, scene: 'ballroom',
   // shared salon state: cut lengths per strand, fringe, texture, hairdo, colour effects, skin, nails, own dress design
   hairLen: null, bangLen: null, hairTex: null, hairDo: null, hairVol: 0, hairFx: 'solid', hairColor2: null, hairShine: false, glow: false, nails: null,
-  dKind: null, dSleeve: null, dColor: null, dColor2: null, dPattern: 'none', dTrim: 'none', dStick: [], pet: null, ...(p.look || {}) });
+  dKind: null, dSleeve: null, dColor: null, dColor2: null, dPattern: 'none', dTrim: 'none', dStick: [], pet: null,
+  // mermaid tail (tail.js)
+  tailOn: false, tailC: '#5fd3c8', tailC2: '#8f8bff', tailC3: '#ff9ecb', tailGrad: 'two', tailPat: 'scales', tailPat2: 'none', tailPC: '#ffffff', tailScales: null, tailStick: [],
+  finShape: 'classic', finC: null, finC2: null, finLook: 'solid', tailFx: 'none', ...(p.look || {}) });
 const lookOf = id => ({ ...freshLook(PMAP[id]), ...(save.looks[id] || {}) });
 /* one save for the whole world: looks per princess, plus stars, discoveries, pets, castle rooms and the gallery */
 let save = { muted: false, current: null, stage: 'world', looks: {}, mixes: {}, stars: 0, found: {}, pets: {}, castle: {}, gallery: [], evDone: {}, kingdom: null };
