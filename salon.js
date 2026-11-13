@@ -203,6 +203,7 @@ function movePinch() {
 G.resets.push(() => { drag.on = false; drag.started = false; nailDrag.on = false; optClear(); const sp = document.getElementById('toolSprite'); if (sp) sp.hidden = true; dropGlow(false); });
 function endStroke(e) {                    // e is null when a second finger turns the stroke into a pinch
   const tab = curTools(), sp = document.getElementById('toolSprite'); drag.on = false; dropGlow(false);
+  if (drag.grab) { drag.grab = false; if (tab && tab.onGrabEnd) tab.onGrabEnd(e && e.type === 'pointerup' ? inStage(e) : true); persist(); paintDue = true; return; }
   if (tab) {
     if (tab.place && e && e.type === 'pointerup' && overStage(e)) { const [x, y] = toSvg(e.clientX, e.clientY); tab.onDrop(ui.tool, x, y, e.clientX, e.clientY); }
     else if (drag.started && tab.onEnd) tab.onEnd(ui.tool);
@@ -220,7 +221,9 @@ window.addEventListener('pointerdown', e => {
   const tab = curTools(); if (!tab) return optDown(e);
   const tb = t.closest('.tool[data-tool]');
   if (tb) { selectTool(tb.dataset.tool); sfx.tap(); } else if (!onStage) return;
-  claim(e, 'tool'); drag.on = true; drag.started = false; moveSprite(e, true);
+  claim(e, 'tool'); drag.on = true; drag.started = false; drag.grab = false;
+  if (tab.place && onStage && !tb && tab.onGrab && tab.onGrab(...toSvg(e.clientX, e.clientY))) { drag.grab = true; paintDue = true; return; }   // picked up something already placed
+  moveSprite(e, true);
   if (tab.place) dropGlow(true, onStage); else if (onStage) stroke(e, tab);
 });
 window.addEventListener('pointermove', e => {
@@ -230,6 +233,7 @@ window.addEventListener('pointermove', e => {
   if (mine(e, 'nail')) return nailTouch(e);
   const tab = curTools(), sp = document.getElementById('toolSprite');
   if (!tab) { if (sp && !sp.hidden) sp.hidden = true; return; }
+  if (mine(e, 'tool') && drag.grab) { tab.onGrabMove(...toSvg(e.clientX, e.clientY)); paintDue = true; return; }
   if (mine(e, 'tool')) { moveSprite(e, true); if (tab.place) dropGlow(true, overStage(e)); else if (inStage(e)) stroke(e, tab); }
   else if (G.id === null && e.pointerType === 'mouse') moveSprite(e, inStage(e) && !(e.target.closest && e.target.closest('button')));
 });

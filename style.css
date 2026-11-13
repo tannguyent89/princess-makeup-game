@@ -523,3 +523,23 @@ body { touch-action: pan-x pan-y; -webkit-user-select: none; user-select: none; 
   .mapwrap { align-items: center; }
   .map { height: min(100%, 95vw); }
 }
+
+/* ---------- mermaid tail studio ---------- */
+.stage[data-zoom="tail"] .doll { transform: scale(1.1); transform-origin: 50% 100%; }
+.chips .nrow { width: 100%; }
+.chips .hue { padding-bottom: 6px; }
+/* magic effects: only the big princess moves; thumbnails and photos stay still */
+.doll .tfx-glow { animation: tglow 1.8s ease-in-out infinite; }
+.doll .tfx-glo { animation: tglow 1.4s ease-in-out infinite; }
+.doll .tfx-hue { animation: thue 6s linear infinite; }
+.doll .tfx-shim { animation: tshim 2.6s linear infinite; }
+.doll .tfx-bub { animation: tbub 3.4s ease-in infinite; }
+.doll .tfx-spk { animation: tspk 1.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.doll .tfx-wave { animation: twave 2.4s ease-in-out infinite alternate; }
+@keyframes tglow { 50% { opacity: .15; } }
+@keyframes thue { to { filter: hue-rotate(360deg); } }
+@keyframes tshim { from { transform: translateY(-70px); } to { transform: translateY(330px); } }
+@keyframes tbub { from { transform: translateY(0); opacity: .9; } to { transform: translateY(-200px); opacity: 0; } }
+@keyframes tspk { 50% { transform: scale(.3); opacity: .3; } }
+@keyframes twave { to { transform: translateX(26px); } }
+.stage[data-zoom="tailclose"] .doll { transform: scale(2); transform-origin: 50% 100%; }

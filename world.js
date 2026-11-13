@@ -221,6 +221,7 @@ function renderKingdom() {
       <div class="krow"><span class="kport">${dollSvg(lookOf(hp.id), '50 10 300 330', 0)}</span><span><b>${hp.name}</b><small>The ${hp.kind} lives here</small></span>${S.princess === hp.id ? '' : `<button class="chip" data-princess="${hp.id}">Play as ${hp.name}</button>`}</div>
       <h3>The ${k.gift} collection</h3><p class="kline">Tap one, or drag it onto ${PMAP[S.princess].name}.</p>
       <div class="wears">${wear.map(([key, it, vb]) => `<button class="opt" data-wear="${key}:${it.id}" aria-pressed="${S[key] === it.id}">${dollSvg({ ...S, [key]: it.id, ...(key === 'dress' ? { dressColor: null } : {}) }, vb, 0)}<span>${it.name}</span></button>`).join('')}</div>
+      ${k.id === 'ocean' ? `<button class="btn wide" data-go="tail">Mermaid Tail Studio</button>` : ''}
       ${ev ? `<h3>Party time</h3><button class="btn magic wide" data-event="${ev.id}">${ico(IC.star)}${ev.name}</button>` : ''}
       <p class="kline" id="foundLine">${found === 3 ? 'You found all 3 hidden stars here.' : `${3 - found} hidden ${found === 2 ? 'star is' : 'stars are'} twinkling somewhere in the picture.`}</p>
     </div></div></section>`;
