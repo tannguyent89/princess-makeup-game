@@ -17,9 +17,9 @@ let uidN = 0; const uid = () => 'u' + (++uidN);
 const pick = a => a[Math.floor(Math.random() * a.length)];
 const f1 = n => (+n).toFixed(1);
 
-const star = (x, y, r, f, extra = '') => { let p = ''; for (let i = 0; i < 10; i++) { const a = Math.PI * i / 5 - Math.PI / 2, q = i % 2 ? r * .45 : r; p += (i ? 'L' : 'M') + f1(x + Math.cos(a) * q) + ',' + f1(y + Math.sin(a) * q); } return `<path d="${p}Z" fill="${f}" ${extra}/>`; };
+const star = (x, y, r, f, extra = '') => { x = +x; y = +y; let p = ''; for (let i = 0; i < 10; i++) { const a = Math.PI * i / 5 - Math.PI / 2, q = i % 2 ? r * .45 : r; p += (i ? 'L' : 'M') + f1(x + Math.cos(a) * q) + ',' + f1(y + Math.sin(a) * q); } return `<path d="${p}Z" fill="${f}" ${extra}/>`; };
 const heart = (x, y, s, f, extra = '') => `<path transform="translate(${x},${f1(y - s * .4)}) scale(${f1(s / 20)})" d="M0,7 C-3,-6 -20,-3 -10,9 L0,19 L10,9 C20,-3 3,-6 0,7Z" fill="${f}" ${extra}/>`;
-const flower = (x, y, r, pc, cc = '#ffd95a') => { let o = ''; for (let i = 0; i < 5; i++) { const a = i * Math.PI * 2 / 5 - Math.PI / 2; o += `<circle cx="${f1(x + Math.cos(a) * r * .62)}" cy="${f1(y + Math.sin(a) * r * .62)}" r="${f1(r * .48)}" fill="${pc}"/>`; } return o + `<circle cx="${x}" cy="${y}" r="${f1(r * .34)}" fill="${cc}"/>`; };
+const flower = (x, y, r, pc, cc = '#ffd95a') => { x = +x; y = +y; let o = ''; for (let i = 0; i < 5; i++) { const a = i * Math.PI * 2 / 5 - Math.PI / 2; o += `<circle cx="${f1(x + Math.cos(a) * r * .62)}" cy="${f1(y + Math.sin(a) * r * .62)}" r="${f1(r * .48)}" fill="${pc}"/>`; } return o + `<circle cx="${x}" cy="${y}" r="${f1(r * .34)}" fill="${cc}"/>`; };
 const bow = (x, y, s, f) => `<g transform="translate(${x},${y}) scale(${f1(s / 20)})"><path d="M0,0 C-8,-14 -24,-14 -22,0 C-24,14 -8,14 0,0Z M0,0 C8,-14 24,-14 22,0 C24,14 8,14 0,0Z" fill="${f}"/><circle r="5" fill="${shade(f, -.2)}"/></g>`;
 const gem = (x, y, r, f) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${f}"/><circle cx="${f1(x - r * .3)}" cy="${f1(y - r * .3)}" r="${f1(r * .35)}" fill="#fff" opacity=".85"/>`;
 const mirror = (s, w = 400) => s + `<g transform="translate(${w},0) scale(-1,1)">${s}</g>`;
@@ -188,7 +188,7 @@ function dressParts(s, P) {
   }
   if (D.deco && D.deco !== 'none' && D.deco !== 'bow') {
     const pts = long ? [[150, 470], [252, 500], [118, 566], [205, 548], [283, 580], [168, 606], [236, 436]] : [[158, 424], [242, 432], [200, 462], [140, 462], [262, 466]];
-    const drawOne = { stars: ([x, y], i) => star(x, y, i % 2 ? 6 : 8, '#fff8c9'), hearts: ([x, y], i) => heart(x, y, i % 2 ? 9 : 12, t === '#ffffff' ? '#fff' : t, 'opacity=".9"'), flowers: ([x, y]) => flower(x, y, 9, t === '#ffffff' ? '#fff' : t), pearls: ([x, y]) => gem(x, y, 4, '#fff') }[D.deco];
+    const drawOne = { stars: ([x, y], i) => star(x, y, i % 2 ? 6 : 8, '#fff8c9'), hearts: ([x, y], i) => heart(x, y, i % 2 ? 9 : 12, t === '#ffffff' ? '#fff' : t, 'opacity=".9"'), flowers: ([x, y]) => flower(x, y, 9, t === '#ffffff' ? '#fff' : t), pearls: ([x, y]) => gem(x, y, 4, '#fff') }[D.deco] || (EMB[D.deco] ? ([x, y], i) => EMB[D.deco](x, y, i % 2 ? 8 : 11, D.c[2] || '#ffffff') : () => '');
     u += `<clipPath id="${cid}"><path d="${sil}"/></clipPath><g clip-path="url(#${cid})">${pts.map(drawOne).join('')}</g>`;
   }
   // bodice
@@ -210,8 +210,9 @@ function dressParts(s, P) {
 }
 
 function faceInner(s, p) {
-  const sk = p.skin, ln = shade(sk, -.4), ink = '#3a2340';
+  const sk = p.skin, ln = shade(sk, -.4), ink = '#3a2340', bq = { arch: 128, flat: 141 }[p.brow] || 135;
   let o = '';
+  if (p.mark) o += `<circle cx="228" cy="222" r="2.600" fill="#3a2340" opacity=".8"/>`;
   if (p.freckles) o += [[150, 204], [158, 210], [166, 204], [234, 204], [242, 210], [250, 204]].map(([x, y]) => `<circle cx="${x}" cy="${y}" r="1.8" fill="${shade(sk, -.3)}" opacity=".7"/>`).join('');
   const bl = s.blush || mix(sk, '#ff7d9c', .4);
   o += mirror(`<ellipse cx="143" cy="213" rx="17" ry="10" fill="${bl}" opacity="${s.blush ? .62 : .32}"/>`);
@@ -220,7 +221,7 @@ function faceInner(s, p) {
   for (const ex of [164, 236]) {
     const d = ex < 200 ? -1 : 1, id = uid();
     if (s.shadow) o += `<path d="M${ex - 20},179 Q${ex},${f1(150 - ry * 1.7)} ${ex + 20},179 Q${ex},${183 - 2 * ry} ${ex - 20},179Z" fill="${s.shadow}" opacity=".88"/>`;
-    o += `<path d="M${ex - d * 14},146 Q${ex},135 ${ex + d * 16},143" stroke="${shade(s.hairColor, -.25)}" stroke-width="4" stroke-linecap="round" fill="none"/>`;
+    o += `<path d="M${ex - d * 14},146 Q${ex},${bq} ${ex + d * 16},143" stroke="${shade(s.hairColor, -.25)}" stroke-width="4" stroke-linecap="round" fill="none"/>`;
     o += `<g class="eye" style="transform-origin:${ex}px 182px"><clipPath id="${id}"><ellipse cx="${ex}" cy="181" rx="15" ry="${ry}"/></clipPath><ellipse cx="${ex}" cy="181" rx="15" ry="${ry}" fill="#fff"/><g clip-path="url(#${id})"><g class="iris"><circle cx="${ex}" cy="182" r="11.5" fill="${s.eyes}"/><circle cx="${ex}" cy="182" r="6" fill="#2a1a2e"/><circle cx="${ex - 4}" cy="177" r="3.6" fill="#fff"/><circle cx="${ex + 4}" cy="187" r="1.8" fill="#fff" opacity=".8"/></g></g>`;
     o += `<path d="M${ex - 16},180 Q${ex},${183 - 2 * ry} ${ex + 16},180" stroke="${lc}" stroke-width="${lw}" stroke-linecap="round" fill="none"/>`;
     if (s.liner === 'wing' || s.liner === 'jewel') o += `<path d="M${ex + d * 15},179 L${ex + d * 25},171" stroke="${lc}" stroke-width="${lw}" stroke-linecap="round"/>`;
@@ -314,7 +315,7 @@ const SCENES = {
       tower(250, 300, 60) + tower(550, 300, 60) + tower(400, 210, 90) + `<rect x="250" y="400" width="300" height="160" fill="#fff"/><path d="M366,560 V470 a34,34 0 0 1 68,0 V560Z" fill="#c9a2ff"/>` + [270, 310, 350, 430, 470, 510].map(x => `<rect x="${x}" y="384" width="22" height="20" fill="#fff"/>`).join('') +
       cloud(120, 150, 1.1, .9) + cloud(680, 110, .9, .9) + cloud(600, 300, .7, .7) + cloud(150, 560, 2, 1) + cloud(420, 600, 2.4, 1) + cloud(690, 570, 2, 1) + `<rect y="610" width="800" height="90" fill="#fff"/>` + star(90, 300, 9, '#fff') + star(720, 420, 8, '#fff') + star(330, 90, 7, '#fff'); },
 };
-const sceneSvg = (id, arg) => `<svg viewBox="0 0 800 700" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">${SCENES[id](arg)}</svg>`;
+const sceneSvg = (id, arg) => `<svg viewBox="0 0 800 700" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">${(SCENES[id] || SCENES.ballroom)(arg)}</svg>`;
 SCENES.catwalk = () => { const [d, f] = vgrad(['#2b1b5e', '#6f4bc4', '#ff9ecb']); return d + `<rect width="800" height="700" fill="${f}"/>` + [[90, 90], [230, 50], [560, 60], [710, 110], [400, 36], [150, 230], [660, 250]].map(([x, y], i) => star(x, y, i % 2 ? 6 : 10, '#fff', 'opacity=".85"')).join('') +
   mirror(`<path d="M70,0 H210 L430,580 H250Z" fill="#fff" opacity=".12"/><path d="M0,0 H150 C130,180 80,330 0,440Z" fill="#ff5c8a"/><path d="M0,0 H90 C80,160 50,290 0,380Z" fill="#ff8fb8" opacity=".8"/><circle cx="140" cy="20" r="26" fill="#ffe27a"/>`, 800) +
   `<rect y="560" width="800" height="140" fill="#3b2a7a"/><path d="M310,560 H490 L640,700 H160Z" fill="#ff8fc0"/><path d="M310,560 H326 L186,700 H160Z M490,560 H474 L614,700 H640Z" fill="#fff" opacity=".7"/>` +
@@ -359,16 +360,18 @@ const STUDIOS = {
     { key: 'cape', label: '🧚 Magic capes', items: CAPEL, vb: '20 250 360 420', fx: [200, 480] },
   ] },
 };
-const ORDER = ['choose', 'salon', 'spa', 'cut', 'hair', 'makeup', 'facial', 'nails', 'designer', 'dress', 'extras', 'runway'];
+const ORDER = ['world', 'choose', 'kingdom', 'salon', 'fashion', 'spa', 'cut', 'hair', 'makeup', 'facial', 'nails', 'designer', 'dress', 'extras', 'runway', 'pets', 'petcare', 'castle', 'events', 'prep', 'eventfit', 'party', 'gallery', 'art'];
 
 /* ---------- 5. state & sound ---------- */
 const KEY = 'moonpetal-salon-v1';
 const freshLook = p => ({ princess: p.id, lips: null, shadow: null, blush: null, liner: 'natural', lashes: 'sweet', eyes: p.eyes, deco: 'none', hair: p.hair, hairColor: p.hairColor, hairAcc: 'none', crown: 'none', dress: p.dress, dressColor: null, shoes: 'flats', gloves: 'none', necklace: 'none', earrings: 'none', bracelet: 'none', wings: 'none', cape: 'none', wand: 'none', bag: 'none', flower: 'none', jewel: 'none', pose: 0, scene: 'ballroom',
   // shared salon state: cut lengths per strand, fringe, texture, hairdo, colour effects, skin, nails, own dress design
   hairLen: null, bangLen: null, hairTex: null, hairDo: null, hairVol: 0, hairFx: 'solid', hairColor2: null, hairShine: false, glow: false, nails: null,
-  dKind: null, dSleeve: null, dColor: null, dColor2: null, dPattern: 'none', dTrim: 'none', dStick: [] });
+  dKind: null, dSleeve: null, dColor: null, dColor2: null, dPattern: 'none', dTrim: 'none', dStick: [], pet: null, ...(p.look || {}) });
 const lookOf = id => ({ ...freshLook(PMAP[id]), ...(save.looks[id] || {}) });
-let save = { muted: false, current: null, stage: 'choose', looks: {}, mixes: {} };
+/* one save for the whole world: looks per princess, plus stars, discoveries, pets, castle rooms and the gallery */
+let save = { muted: false, current: null, stage: 'world', looks: {}, mixes: {}, stars: 0, found: {}, pets: {}, castle: {}, gallery: [], evDone: {}, kingdom: null };
+const cleanDeep = (v, d = 0) => { if (v === null || typeof v === 'number' || typeof v === 'boolean') return v; if (typeof v === 'string') return /^#?[\w-]{1,24}$/.test(v) ? v : null; if (d > 5 || typeof v !== 'object') return null; if (Array.isArray(v)) return v.slice(0, 200).map(x => cleanDeep(x, d + 1)); const o = {}; for (const [k, x] of Object.entries(v)) if (/^[\w-]{1,24}$/.test(k)) o[k] = cleanDeep(x, d + 1); return o; };
 let S = null;                       // the look being edited
 const ui = { tab: {}, mixTab: null, mixPick: [], tool: null, entry: null, nail: { mode: 'polish', color: '#ff5c8a', st: 'heart' } };
 
@@ -379,7 +382,12 @@ function loadSave() { try { const j = JSON.parse(localStorage.getItem(KEY)); if 
   const looks = {}; for (const [id, look] of Object.entries(save.looks || {})) if (PMAP[id] && look && typeof look === 'object') looks[id] = Object.fromEntries(Object.entries(look).filter(([k, v]) => k !== 'princess' && ok(v)));
   const mixes = {}; for (const [k, list] of Object.entries(save.mixes || {})) if (Array.isArray(list)) mixes[k] = list.filter(c => /^#[0-9a-f]{6}$/i.test(c));
   save.looks = looks; save.mixes = mixes; save.muted = !!save.muted;
-  if (!PMAP[save.current]) { save.current = null; save.stage = 'choose'; } if (!ORDER.includes(save.stage)) save.stage = 'choose'; }
+  save.stars = Math.max(0, Math.min(9999, Math.floor(+save.stars || 0)));
+  for (const k of ['found', 'pets', 'castle', 'evDone']) { const c = cleanDeep(save[k]); save[k] = c && typeof c === 'object' && !Array.isArray(c) ? c : {}; }
+  save.gallery = (Array.isArray(save.gallery) ? save.gallery : []).filter(g => g && typeof g === 'object' && PMAP[g.p] && typeof g.id === 'number' && g.look && typeof g.look === 'object').slice(-24)
+    .map(g => ({ id: g.id, p: g.p, scene: cleanDeep(g.scene), look: Object.fromEntries(Object.entries(g.look).filter(([k, v]) => k !== 'princess' && ok(v))) }));
+  save.kingdom = cleanDeep(save.kingdom);
+  if (!PMAP[save.current]) { save.current = null; save.stage = 'choose'; } if (!ORDER.includes(save.stage)) save.stage = 'world'; }
 function persist() { if (S) save.looks[S.princess] = S; try { localStorage.setItem(KEY, JSON.stringify(save)); } catch (e) { /* ignore */ } }
 
 let AC = null;
