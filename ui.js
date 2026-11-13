@@ -3,6 +3,8 @@
    Screens, navigation, undo/redo, events and boot.
    Every screen draws the same look object S, so a change made in one
    activity is what every other activity (and the runway) shows.
+   world.js · pets.js · castle.js · events.js · gallery.js add their own
+   screens; this file routes between them.
    ===================================================================== */
 const app = $('#app'), view = $('#view'), fx = $('#fx');
 const NOICON = `<svg class="noicon" viewBox="0 0 48 48"><circle cx="24" cy="24" r="17" fill="none" stroke="currentColor" stroke-width="4"/><path d="M12 36L36 12" stroke="currentColor" stroke-width="4" stroke-linecap="round"/></svg>`;
@@ -12,54 +14,78 @@ const IC = {
   magic: 'M3 21l11-11 1.5 1.5L4.5 22.5zM17 2l1.2 3.3 3.3 1.2-3.3 1.2L17 11l-1.2-3.3-3.3-1.2 3.3-1.2z',
   undo: 'M9 5L3 11l6 6v-4h5a4 4 0 0 1 0 8h-3v2h3a6 6 0 0 0 0-12H9z', redo: 'M15 5l6 6-6 6v-4h-5a4 4 0 0 0 0 8h3v2h-3a6 6 0 0 1 0-12h5z', reset: 'M12 5V1L6.5 6 12 11V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z',
   heart: 'M12 21C5 15 2 12 2 8a5 5 0 0 1 10-1 5 5 0 0 1 10 1c0 4-3 7-10 13z', cam: 'M9 4L7.500 6H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-3.500L15 4zM12 9a4 4 0 1 1 0 8 4 4 0 0 1 0-8z',
+  map: 'M3 6l6-2 6 2 6-2v14l-6 2-6-2-6 2zM9 4v14M15 6v14', paw: 'M12 13c3 0 6 2 6 5s-3 3-6 3-6 0-6-3 3-5 6-5zM5 9a2 2.500 0 1 1 0 .1zM9.500 5a2 2.500 0 1 1 0 .1zM14.500 5a2 2.500 0 1 1 0 .1zM19 9a2 2.500 0 1 1 0 .1z',
 };
-const NAV = [['choose', 'Princess', IC.crown], ['salon', 'Salon', IC.salon], ['runway', 'Show', IC.star]];
-const VIEWS = { choose: renderChoose, salon: renderSalon, nails: renderNails, runway: renderRunway };
+const VIEWS = { world: renderWorld, choose: renderChoose, kingdom: renderKingdom, salon: renderHub, fashion: renderHub, nails: renderNails, runway: renderRunway, pets: renderPets, castle: renderCastle, events: renderEvents, prep: renderPrep, party: renderParty, gallery: renderGallery, art: renderArt };
+const LOOK_STAGES = ['salon', 'fashion', 'eventfit', ...ACTS.map(a => a.id)];   // screens where "start this princess over" makes sense
 
 /* ---------- navigation ---------- */
 function go(stage) {
-  if (!ORDER.includes(stage) || (stage !== 'choose' && !S)) stage = 'choose';
-  save.stage = stage; hist.undo = []; hist.redo = []; ui.tool = null;
-  ui.entry = S ? JSON.stringify(S) : null;                // what "reset this activity" goes back to
+  gestureReset(); G.view = { z: 1, x: 0, y: 0 };            // a new screen never inherits a half-finished drag or a zoom
+  if (!ORDER.includes(stage)) stage = 'world';
+  if (!S) stage = 'choose';
+  else if (['prep', 'eventfit', 'party'].includes(stage) && !evNow()) stage = 'events';
+  else if (stage === 'petcare' && !hasPet(ui.pet)) stage = 'pets';
+  else if (stage === 'kingdom' && !kOpen(save.kingdom)) stage = 'world';
+  save.stage = stage; hist.undo = []; hist.redo = []; ui.tool = null; ui.walked = false;
+  ui.entry = S ? snap() : null;                           // what "reset this activity" goes back to
   const st = STUDIOS[stage]; if (st && st.enter) st.enter();
   persist(); render();
 }
 function render() {
   app.dataset.stage = save.stage;
-  const here = NAV.some(n => n[0] === save.stage) ? save.stage : 'salon';
-  $('#steps').innerHTML = NAV.map(([id, label, d]) => `<button class="step" data-go="${id}" ${id === here ? 'aria-current="step"' : ''} ${id !== 'choose' && !S ? 'disabled' : ''}>${ico(d)}<span>${label}</span></button>`).join('');
-  $('#btnReset').hidden = $('#btnSave').hidden = !S || save.stage === 'choose';
+  const cur = id => save.stage === id ? 'aria-current="page"' : '';
+  $('#steps').innerHTML = `<button class="step" data-go="world" ${cur('world')} ${S ? '' : 'disabled'}>${ico(IC.map)}<span>World map</span></button><button class="step" data-go="choose" ${cur('choose')}>${ico(IC.crown)}<span>Princesses</span></button><button class="step stars" id="starChip" aria-label="Magical stars">${ico(IC.star)}<b>${save.stars}</b></button>`;
+  $('#btnReset').hidden = !S || !LOOK_STAGES.includes(save.stage);
+  $('#btnSave').hidden = !S || ['choose', 'gallery', 'art', 'pets', 'petcare', 'castle', 'events', 'prep'].includes(save.stage);
   $('#toolSprite').hidden = true; $('#toolSprite').innerHTML = '';
   (VIEWS[save.stage] || renderStudio)();
   view.scrollTop = 0;
 }
 function navHtml() {
-  const i = ACTS.findIndex(a => a.id === save.stage), next = ACTS[i + 1];
-  return `<div class="nav"><button class="btn ghost" data-go="salon">${ico(IC.salon)}Salon</button>${next ? `<button class="btn" data-go="${next.id}">Next: ${next.name}</button>` : ''}</div>`;
+  const st = STUDIOS[save.stage]; if (st && st.nav) return st.nav();
+  const i = ACTS.findIndex(a => a.id === save.stage), hub = i >= 0 ? ACTS[i].g : 'salon', next = ACTS[i + 1];
+  return `<div class="nav"><button class="btn ghost" data-go="${hub}">${ico(IC.salon)}${hub === 'salon' ? 'Salon' : 'Studio'}</button>${next ? `<button class="btn" data-go="${next.id}">Next: ${next.name}</button>` : ''}</div>`;
 }
 
-/* ---------- undo / redo / reset (snapshots of the whole look) ---------- */
+/* ---------- undo / redo / reset (snapshots of everything a screen can change) ---------- */
 const hist = { undo: [], redo: [] };
+const snap = () => JSON.stringify({ S, pets: save.pets, castle: save.castle });
+function restore(j) { const o = JSON.parse(j); S = o.S; save.pets = o.pets; save.castle = o.castle; }
 const histButtons = () => `<div class="hist"><button class="round" id="undo" aria-label="Undo">${ico(IC.undo)}</button><button class="round" id="redo" aria-label="Redo">${ico(IC.redo)}</button><button class="round" id="resetAct" aria-label="Reset this activity">${ico(IC.reset)}</button></div>`;
-function pushHist() { hist.undo.push(JSON.stringify(S)); if (hist.undo.length > 40) hist.undo.shift(); hist.redo = []; syncHist(); }
+function pushHist() { hist.undo.push(snap()); if (hist.undo.length > 40) hist.undo.shift(); hist.redo = []; syncHist(); }
 function syncHist() { const u = $('#undo'), r = $('#redo'); if (u) u.disabled = !hist.undo.length; if (r) r.disabled = !hist.redo.length; }
-function timeTravel(from, to) { if (!from.length) return; to.push(JSON.stringify(S)); S = JSON.parse(from.pop()); persist(); refresh(); sfx.tap(); }
-function refresh() { syncHist(); if (save.stage === 'nails') paintNails(); else { paintDoll(true); if ($('#opts')) renderOpts(); } }
+function timeTravel(from, to) { if (!from.length) return; hairAnim++; to.push(snap()); restore(from.pop()); persist(); refresh(); sfx.tap(); }
+function refresh() {
+  syncHist();
+  if (save.stage === 'nails') paintNails();
+  else if (save.stage === 'castle') { cz.sel = -1; paintRoom(); renderRoomOpts(); }
+  else { paintDoll(true); if ($('#opts')) renderOpts(); }
+}
 function resetActivity() {
   if (!ui.entry) return;
-  const keep = JSON.stringify(S); S = JSON.parse(ui.entry);
+  const keep = snap(); hairAnim++; restore(ui.entry);
   const st = STUDIOS[save.stage]; if (st && st.enter) st.enter();
-  persist(); render(); hist.undo.push(keep); syncHist(); sfx.magic();
+  cz.sel = -1; persist(); render(); hist.undo.push(keep); syncHist(); sfx.magic();
 }
 
-/* ---------- princess selection ---------- */
+/* ---------- princess collection ---------- */
 function renderChoose() {
-  view.innerHTML = `<section class="choose"><h2>Who is getting ready for the royal ball?</h2><p class="sub">Pick a princess. You can style every one of them.</p><div class="cards">${PRINCESSES.map(p => `
+  view.innerHTML = `<section class="choose"><h2>${S ? 'Princess collection' : 'Pick your first princess'}</h2><p class="sub">Nine princesses from nine kingdoms. You can style every one of them.</p><div class="cards many">${PRINCESSES.map(p => `
     <button class="card" data-princess="${p.id}" style="--accent:${p.accent}">
-      <span class="portrait">${dollSvg(lookOf(p.id), '50 10 300 330', 0)}</span>
-      <strong>${p.name}</strong><em>${p.title}</em><small>${p.line}</small>
-      <span class="btn small">${save.looks[p.id] ? 'Keep styling' : 'Choose ' + p.name}</span>
+      <span class="portrait">${dollSvg(lookOf(p.id), '50 10 300 330', 0)}<i class="badge"><svg viewBox="-18 -18 36 36">${EMB[p.k](0, 0, 11)}</svg></i></span>
+      <strong>${p.name}</strong><em>${p.kind}</em><small>${p.line}</small>
+      <span class="btn small">${S && S.princess === p.id ? 'Playing now' : save.looks[p.id] ? 'Keep styling' : 'Choose ' + p.name}</span>
     </button>`).join('')}</div></section>`;
+}
+
+/* ---------- the two hubs: Beauty Salon and Fashion Studio ---------- */
+function renderHub() {
+  const p = PMAP[S.princess], g = save.stage, fash = g === 'fashion';
+  view.innerHTML = `<section class="studio hub">
+    <div class="stage" id="stage" data-zoom="full"><div class="scene">${sceneSvg('studio', fash ? '#fff1b8' : '#ffd9ea')}</div>${auraHtml(p.k)}<div class="doll" id="doll"></div>${buddyHtml()}<div class="plate"><b>${p.name}</b> · ${fash ? 'Fashion studio' : 'Beauty salon'}</div></div>
+    <div class="panel"><h2 class="hubtitle">${fash ? 'What shall she wear?' : 'What shall we do today?'}</h2><div class="acts">${ACTS.filter(a => a.g === g).map(a => `<button class="act" data-go="${a.id}" style="--c:${a.c}">${toolSvg(a.art)}<strong>${a.name}</strong></button>`).join('')}</div></div></section>`;
+  paintDoll();
 }
 
 /* ---------- studios (option tabs and tool tabs) ---------- */
@@ -72,13 +98,13 @@ function renderStudio() {
   const st = STUDIOS[save.stage], p = PMAP[S.princess];
   view.innerHTML = `<section class="studio">
     <div class="stage" id="stage" data-zoom="${st.zoom}">
-      <div class="scene">${sceneSvg('studio', st.tint)}</div>
+      <div class="scene">${st.scene ? st.scene() : sceneSvg('studio', st.tint)}</div>
       <div class="doll" id="doll"></div><canvas class="fxc" id="fxc"></canvas>
-      <div class="plate"><b>${p.name}</b> · ${st.title}</div>${histButtons()}
+      <div class="plate">${st.plate ? st.plate() : `<b>${p.name}</b> · ${st.title}`}</div>${histButtons()}<button class="round unzoom" id="unzoom" aria-label="Zoom back out" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 3a7 7 0 0 1 5.600 11.200l5.100 5.100-1.400 1.400-5.100-5.100A7 7 0 1 1 10 3zm0 2a5 5 0 1 0 0 10 5 5 0 0 0 0-10zM7 9h6v2H7z"/></svg></button>
       ${st.noSurprise ? '' : `<button class="btn magic" id="surprise">${ico(IC.magic)}Surprise me</button>`}
     </div>
     <div class="panel">
-      ${st.hint ? '<div class="hint" id="hint"></div>' : ''}
+      <div class="hint" id="hint"></div>
       <div class="tabs" role="tablist" ${st.tabs.length < 2 ? 'hidden' : ''}>${st.tabs.map((t, n) => `<button class="tab" role="tab" data-tab="${n}">${t.label}</button>`).join('')}</div>
       <div class="opts" id="opts"></div>
     </div>
@@ -87,13 +113,15 @@ function renderStudio() {
 }
 function paintDoll(hop) {
   const el = $('#doll'); if (!el) return;
-  el.innerHTML = dollSvg(viewState(), '0 0 400 700', save.stage === 'runway' ? S.pose : 0);
+  const st = STUDIOS[save.stage];
+  const html = st && st.draw ? st.draw() : dollSvg(viewState(), '0 0 400 700', save.stage === 'runway' || save.stage === 'party' ? S.pose : 0), key = html.replace(/u[0-9]+/g, 'u');
+  if (el._key !== key) { el._key = key; el.innerHTML = html; }          // nothing changed: leave the picture alone
   if (hop) { el.classList.remove('hop'); void el.offsetWidth; el.classList.add('hop'); }
 }
 const hueRow = `<label class="hue"><span>Colour slider</span><input type="range" min="0" max="359" value="300" data-hue aria-label="Colour slider"></label>`;
 function renderOpts() {
   const st = STUDIOS[save.stage], tab = curTab(), box = $('#opts'), n = st.tabs.indexOf(tab);
-  document.querySelectorAll('.tab').forEach((b, k) => b.setAttribute('aria-selected', k === n));
+  document.querySelectorAll('.tab[data-tab]').forEach((b, k) => b.setAttribute('aria-selected', k === n));
   $('#stage').classList.toggle('tooling', !!tab.tools);
   if (tab.tools) {
     if (!tab.tools.some(t => t.id === ui.tool)) ui.tool = tab.tools[0].id;
@@ -108,12 +136,12 @@ function renderOpts() {
   } else {
     const base = viewState(), cur = tabValue(tab);
     box.className = 'opts';
-    box.innerHTML = tab.items.map(it => `<button class="opt" data-v="${it.id}" aria-pressed="${cur === it.id}">${it.id === 'none' ? NOICON : dollSvg({ ...base, ...(tab.clean || {}), ...(tab.pv ? tab.pv(it.id) : { [tab.key]: it.id }) }, tab.vb, 0)}<span>${it.name}</span></button>`).join('');
+    box.innerHTML = itemsOf(tab).map(it => `<button class="opt" data-v="${it.id}" aria-pressed="${cur === it.id}">${it.id === 'none' ? NOICON : tab.thumb ? tab.thumb(it.id) : dollSvg({ ...base, ...(tab.clean || {}), ...(tab.pv ? tab.pv(it.id) : { [tab.key]: it.id }) }, tab.vb, 0)}<span>${it.name}</span></button>`).join('');
   }
   box.scrollTop = 0;
-  if (st.hint) st.hint();
+  if (st.hint) st.hint(); else setHint(tab.colors ? `Tap a colour, or drag the brush onto ${PMAP[S.princess].name}.` : `Tap one to try it on, or drag it onto ${PMAP[S.princess].name}.`);
 }
-function setChoice(tab, value) { S[tab.key] = value; if (tab.onPick) tab.onPick(value); }
+function setChoice(tab, value) { if (tab.set) tab.set(value); else S[tab.key] = value; if (tab.onPick) tab.onPick(value); }
 function applyChoice(tab, value, quiet, noHist) {
   if (!noHist) pushHist();
   setChoice(tab, value); persist(); paintDoll(!noHist);
@@ -121,41 +149,52 @@ function applyChoice(tab, value, quiet, noHist) {
   if (!quiet) { sfx.pick(); burstAtDoll(tab.fx); }
 }
 
-/* ---------- royal show ---------- */
+/* ---------- princess runway ---------- */
 let confettiTimer = null;
+const showScenes = () => [...SHOW_SCENES, ...KINGDOMS.filter(k => kOpen(k.id)).map(k => ({ id: 'k_' + k.id, name: k.short }))];
 function renderRunway() {
   const p = PMAP[S.princess];
   view.innerHTML = `<section class="runway">
     <div class="stage show" id="stage">
-      <div class="scene" id="showScene">${sceneSvg(S.scene)}</div>
+      <div class="scene" id="showScene">${sceneSvg(S.scene)}</div>${auraHtml(p.k)}
       <div class="spot"></div>
-      <div class="doll" id="doll"></div>
+      <div class="doll" id="doll"></div>${buddyHtml()}
       <div class="flash" id="flash"></div>
       <div class="banner"><span>Princess ${p.name}</span> is ready for the ball!</div>
     </div>
     <div class="showbar">
-      <div class="group"><h3>Where is the party?</h3><div class="row" id="scenePick">${SHOW_SCENES.map(sc => `<button class="scn" data-scene="${sc.id}" aria-pressed="${S.scene === sc.id}">${sceneSvg(sc.id)}<span>${sc.name}</span></button>`).join('')}</div></div>
+      <div class="group"><h3>Where is the party?</h3><div class="row" id="scenePick">${showScenes().map(sc => `<button class="scn" data-scene="${sc.id}" aria-pressed="${S.scene === sc.id}">${sceneSvg(sc.id)}<span>${sc.name}</span></button>`).join('')}</div></div>
       <div class="group"><h3>Strike a pose</h3><div class="row" id="posePick">${POSES.map((po, i) => `<button class="pose" data-pose="${i}" aria-pressed="${S.pose === i}">${dollSvg(S, '40 230 320 330', i)}<span>${po.name}</span></button>`).join('')}</div></div>
       <div class="group actions">
         <button class="btn magic" id="walk">${ico(IC.star)}Walk the runway</button>
-        <button class="btn" id="photo">${ico(IC.cam)}Save a photo</button>
-        <button class="btn ghost" data-go="salon">Back to the salon</button>
-        <button class="btn ghost" data-go="choose">Choose another princess</button>
+        <button class="btn" id="toGallery">${ico(IC.heart)}Save to my gallery</button>
+        <button class="btn ghost" id="photo">${ico(IC.cam)}Save a photo</button>
+        <button class="btn ghost" data-go="fashion">Back to the studio</button>
       </div>
     </div></section>`;
   paintDoll(); celebrate();
 }
+/* each princess has her own signature move */
+function doMove(quiet) {
+  const d = $('#doll'); if (!d || !S) return;
+  const c = 'mv-' + (PMAP[S.princess].move || 'twirl');
+  d.classList.remove(c); void d.offsetWidth; d.classList.add(c); setTimeout(() => d.classList.remove(c), 1600);
+  if (!quiet) { sfx.magic(); burstAtDoll([200, 220]); }
+}
 function celebrate() {
-  sfx.fanfare();
-  const d = $('#doll'); d.classList.add('twirl'); setTimeout(() => d.classList.remove('twirl'), 1300);
+  sfx.fanfare(); doMove(true);
   clearInterval(confettiTimer); let n = 0;
-  confettiTimer = setInterval(() => { if (save.stage !== 'runway' || ++n > 60) { clearInterval(confettiTimer); return; } dropConfetti(); if (n < 26) dropConfetti(); }, 130);
+  confettiTimer = setInterval(() => { if (!$('.stage.show') || ++n > 60) { clearInterval(confettiTimer); return; } dropConfetti(); if (n < 26) dropConfetti(); }, 130);
 }
 function walkRunway() {
   const d = $('#doll'), f = $('#flash'); if (!d || d.classList.contains('walk')) return;
-  d.classList.remove('twirl'); d.classList.add('walk'); f.classList.add('go'); sfx.fanfare();
+  d.classList.add('walk'); f.classList.add('go'); sfx.fanfare();
   let n = 0; const t = setInterval(() => { if (++n > 5 || !$('#flash')) return clearInterval(t); S.pose = n % POSES.length; paintDoll(); for (let i = 0; i < 4; i++) dropConfetti(); tone(1800, 0, .05, 'square', .03); }, 520);
-  setTimeout(() => { d.classList.remove('walk'); f.classList.remove('go'); if (save.stage === 'runway') { persist(); document.querySelectorAll('.pose').forEach(b => b.setAttribute('aria-pressed', +b.dataset.pose === S.pose)); } }, 3300);
+  setTimeout(() => {
+    d.classList.remove('walk'); f.classList.remove('go'); if (save.stage !== 'runway') return;
+    persist(); document.querySelectorAll('.pose').forEach(b => b.setAttribute('aria-pressed', +b.dataset.pose === S.pose));
+    if (!ui.walked) { ui.walked = true; muddy(); earn(1, 'What a show!'); }
+  }, 3300);
 }
 const PARTY = ['#ff5c8a', '#ffd36e', '#9d7bff', '#7fd4ff', '#ff9ecb', '#ffffff'];
 function dropConfetti() {
@@ -179,18 +218,8 @@ function burst(x, y, n = 8) {
     fx.appendChild(el); el.addEventListener('animationend', () => el.remove());
   }
 }
-function savePhoto() {
-  const p = PMAP[S.princess];
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1050" viewBox="0 0 800 700">${SCENES[S.scene]()}<g transform="translate(214,36) scale(.93)">${dollInner(S)}</g><rect x="210" y="14" width="380" height="50" rx="25" fill="#fff" opacity=".9"/><text x="400" y="48" text-anchor="middle" font-family="Trebuchet MS, Verdana, sans-serif" font-weight="bold" font-size="26" fill="#7a3fb0">Princess ${p.name}</text></svg>`;
-  const img = new Image();
-  img.onload = () => {
-    const c = document.createElement('canvas'); c.width = 1200; c.height = 1050; c.getContext('2d').drawImage(img, 0, 0, 1200, 1050);
-    c.toBlob(b => { if (!b) return toast('Could not make the photo in this browser.'); const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = `princess-${p.id}.png`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000); toast('Photo saved to your downloads'); sfx.magic(); }, 'image/png');
-  };
-  img.onerror = () => toast('Could not make the photo in this browser.');
-  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
-}
-function toast(msg) { document.querySelectorAll('.toast').forEach(t => t.remove()); const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
+const savePhoto = () => svgToPng(photoSvg(S, save.stage === 'party' && evNow() ? eventSceneInner(evNow()) : (SCENES[S.scene] || SCENES.ballroom)()), 1200, 1050, `princess-${S.princess}.png`);
+function toast(msg) { document.querySelectorAll('.toast').forEach(t => t.remove()); const t = document.createElement('div'); t.className = 'toast'; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 2800); }
 
 /* ---------- potion mixer ---------- */
 const POTIONS = ['#ff4d6d', '#ff9e3d', '#ffd93d', '#6bd968', '#3dc9c0', '#4d96ff', '#8f6bff', '#ff6bd6', '#ffffff', '#4a3555'];
@@ -208,36 +237,39 @@ function drawMixer() {
 
 /* ---------- events ---------- */
 document.addEventListener('click', e => {
-  const t = e.target.closest('button'); if (!t) return;
+  const t = e.target.closest('button');
+  if (!t) { if (e.target.closest('#doll') && ['salon', 'fashion', 'kingdom', 'runway', 'party'].includes(save.stage)) doMove(); return; }
   if (t.dataset.go) { sfx.tap(); return go(t.dataset.go); }
-  if (t.dataset.princess) { S = lookOf(t.dataset.princess); save.current = S.princess; sfx.magic(); const r = t.getBoundingClientRect(); burst(r.left + r.width / 2, r.top + r.height / 3, 14); return go('salon'); }
+  if (t.dataset.princess && PMAP[t.dataset.princess]) { S = lookOf(t.dataset.princess); save.current = S.princess; sfx.magic(); const r = t.getBoundingClientRect(); burst(r.left + r.width / 2, r.top + r.height / 3, 14); return go(save.stage === 'kingdom' ? 'kingdom' : 'world'); }
   if (t.dataset.tab) { ui.tab[save.stage] = +t.dataset.tab; sfx.tap(); return renderOpts(); }
   if (t.dataset.mix) { sfx.tap(); return openMixer(curTab()); }
   if (t.dataset.potion) { if (ui.mixPick.length >= 2) ui.mixPick = []; ui.mixPick.push(t.dataset.potion); sfx.pour(); return drawMixer(); }
   if (t.id === 'mixUse') { const c = t.dataset.c, k = ui.mixTab.key; save.mixes[k] = [c, ...(save.mixes[k] || []).filter(x => x !== c)].slice(0, 5); $('#mixer').close(); applyChoice(ui.mixTab, c, true); renderOpts(); sfx.magic(); return burstAtDoll(ui.mixTab.fx); }
-  if (t.hasAttribute('data-close')) return t.closest('dialog').close();
+  if (t.hasAttribute('data-close')) { const dlg = t.closest('dialog'); dlg.close(); if (dlg.id === 'unlock') setTimeout(showUnlock, 300); return; }
   if (t.closest('#opts') && 'v' in t.dataset) return applyChoice(curTab(), t.dataset.v || null);
-  if (t.id === 'surprise') { pushHist(); STUDIOS[save.stage].tabs.forEach(tab => { if (tab.tools || tab.noSurprise) return; setChoice(tab, tab.colors ? pick(tab.colors) : pick(tab.items).id); }); persist(); paintDoll(true); renderOpts(); sfx.magic(); return burstAtDoll([200, STUDIOS[save.stage].zoom === 'full' ? 380 : 180]); }
+  if (t.id === 'surprise') { pushHist(); STUDIOS[save.stage].tabs.forEach(tab => { if (tab.tools || tab.noSurprise) return; setChoice(tab, tab.colors ? pick(tab.colors) : pick(itemsOf(tab)).id); }); persist(); paintDoll(true); renderOpts(); sfx.magic(); return burstAtDoll([200, STUDIOS[save.stage].zoom === 'face' ? 180 : 380]); }
   if (t.dataset.scene) { S.scene = t.dataset.scene; persist(); $('#showScene').innerHTML = sceneSvg(S.scene); document.querySelectorAll('.scn').forEach(b => b.setAttribute('aria-pressed', b.dataset.scene === S.scene)); return sfx.pick(); }
   if (t.dataset.pose) { S.pose = +t.dataset.pose; persist(); paintDoll(true); document.querySelectorAll('.pose').forEach(b => b.setAttribute('aria-pressed', +b.dataset.pose === S.pose)); sfx.pick(); return burstAtDoll([200, 300]); }
   if (t.id === 'photo') return savePhoto();
   if (t.id === 'walk') return walkRunway();
+  if (t.id === 'unzoom') { sfx.tap(); return resetView(); }
   if (t.id === 'undo') return timeTravel(hist.undo, hist.redo);
   if (t.id === 'redo') return timeTravel(hist.redo, hist.undo);
   if (t.id === 'resetAct') return resetActivity();
-  if (t.id === 'btnSave') { persist(); sfx.magic(); const r = t.getBoundingClientRect(); burst(r.left + r.width / 2, r.top + r.height, 10); return toast(`Saved! ${PMAP[S.princess].name} will look like this next time.`); }
+  if (t.id === 'btnSave') return addToGallery();
   if (t.id === 'btnSound') { save.muted = !save.muted; persist(); drawSound(); return sfx.tap(); }
   if (t.id === 'btnReset') return $('#confirm').showModal();
-  if (t.id === 'confirmYes') { $('#confirm').close(); S = freshLook(PMAP[S.princess]); sfx.magic(); return go(save.stage); }
+  if (t.id === 'confirmYes') { $('#confirm').close(); S = { ...freshLook(PMAP[S.princess]), pet: S.pet }; sfx.magic(); return go(save.stage); }
 });
+$('#unlock').addEventListener('close', () => setTimeout(showUnlock, 300));   // also covers closing with the Esc key
 /* colour slider: one undo step per drag, live preview while it moves */
 let hueLive = false;
 document.addEventListener('input', e => {
   if (!e.target.matches('[data-hue]')) return;
-  const c = hsl2hex(+e.target.value);
-  if (save.stage === 'nails') { ui.nail.mode = 'polish'; ui.nail.color = c; document.querySelectorAll('#nopts [aria-pressed="true"]').forEach(b => b.setAttribute('aria-pressed', 'false')); }
-  else applyChoice(curTab(), c, true, hueLive);
-  hueLive = true; e.target.style.setProperty('--thumb', c);
+  const c = hsl2hex(+e.target.value); e.target.style.setProperty('--thumb', c);
+  if (save.stage === 'art') { art.color = c; if (art.mode === 'eraser' || art.mode === 'stamp') art.mode = 'brush'; document.querySelectorAll('#aopts .sw').forEach(b => b.setAttribute('aria-pressed', 'false')); return; }
+  if (save.stage === 'nails') { ui.nail.mode = 'polish'; ui.nail.color = c; document.querySelectorAll('#nopts [aria-pressed="true"]').forEach(b => b.setAttribute('aria-pressed', 'false')); return; }
+  applyChoice(curTab(), c, true, hueLive); hueLive = true;
 });
 document.addEventListener('change', e => { if (e.target.matches('[data-hue]')) hueLive = false; });
 function drawSound() { $('#btnSound').innerHTML = ico(save.muted ? 'M3 9v6h4l5 5V4L7 9zM15 9l6 6M21 9l-6 6' : 'M3 9v6h4l5 5V4L7 9zM15.500 8a5 5 0 0 1 0 8l-1.200-1.500a3 3 0 0 0 0-5zM18 5a9 9 0 0 1 0 14l-1.200-1.500a7 7 0 0 0 0-11z'); $('#btnSound').classList.toggle('off', save.muted); }
@@ -246,13 +278,27 @@ function drawSound() { $('#btnSound').innerHTML = ico(save.muted ? 'M3 9v6h4l5 5
 const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 let tx = 0, ty = 0, px = 0, py = 0, lastMove = 0;
 window.addEventListener('pointermove', e => { tx = e.clientX / innerWidth * 2 - 1; ty = e.clientY / innerHeight * 2 - 1; lastMove = performance.now(); }, { passive: true });
+const LITE = window.matchMedia('(pointer: coarse)').matches; let tickN = 0, sentX = 9, sentY = 9;
 function tick(now) {
+  if (LITE && (tickN ^= 1)) return requestAnimationFrame(tick);      // tablets: every other frame is plenty for a gentle sway
   if (now - lastMove > 2500) { tx = Math.sin(now / 1900) * .55; ty = Math.sin(now / 2700) * .35; }
   px += (tx - px) * .08; py += (ty - py) * .08;
   const d = document.getElementById('doll');
-  if (d) { d.style.setProperty('--px', px.toFixed(3)); d.style.setProperty('--py', py.toFixed(3)); }
+  if (d && !G.pinch && (Math.abs(px - sentX) > .004 || Math.abs(py - sentY) > .004 || d !== tick.el)) { tick.el = d; sentX = px; sentY = py; d.style.setProperty('--px', px.toFixed(3)); d.style.setProperty('--py', py.toFixed(3)); }
   requestAnimationFrame(tick);
 }
+
+/* ---------- tablets and phones ---------- */
+document.addEventListener('touchstart', () => { /* lets iOS show the pressed look of buttons */ }, { passive: true });
+document.addEventListener('gesturestart', e => e.preventDefault());            // Safari: no page zoom in the middle of a game
+if (LITE) document.addEventListener('contextmenu', e => e.preventDefault());   // long-press is "pick up", not a menu
+let resizeDue = 0;
+window.addEventListener('resize', () => {                                      // rotation, split view, keyboard
+  clearTimeout(resizeDue); resizeDue = setTimeout(() => {
+    gestureReset(); resetView();
+    const w = $('#mapwrap'); if (w) w.scrollLeft = (w.scrollWidth - w.clientWidth) / 2;
+  }, 150);
+});
 
 /* ---------- boot ---------- */
 loadSave();
@@ -261,3 +307,5 @@ const want = location.hash.slice(1);
 if (ORDER.includes(want)) { if (!S && want !== 'choose') { S = lookOf(PRINCESSES[0].id); save.current = S.princess; } save.stage = want; }
 drawSound(); go(save.stage);
 if (!still) requestAnimationFrame(tick);
+/* when served from a website (not opened as a file), keep a copy for playing offline */
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => { /* offline copy is optional */ });

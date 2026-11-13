@@ -64,7 +64,8 @@ function fxSpawn(kind, x, y, o = {}) { parts.push({ kind, x, y, vx: o.vx || 0, v
 function fxLoop() {
   if (paintDue) { paintDue = false; if (save.stage === 'nails') paintNails(); else paintDoll(); }
   const cv = document.getElementById('fxc');
-  if (cv) {
+  if (cv && (parts.length || cv.dataset.live === '1')) {            // nothing flying: leave the canvas alone
+    cv.dataset.live = parts.length ? '1' : '0';
     const r = cv.getBoundingClientRect(), dpr = Math.min(2, window.devicePixelRatio || 1), w = Math.round(r.width * dpr), h = Math.round(r.height * dpr);
     if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
     const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, r.width, r.height);
@@ -97,31 +98,151 @@ function stroke(e, tab) {
   for (let i = 1; i <= n; i++) tab.onDrag(ui.tool, lx + (x - lx) * i / n, ly + (y - ly) * i / n, e.clientX, e.clientY);
   drag.last = [x, y]; paintDue = true;
 }
-window.addEventListener('pointerdown', e => {
-  if (save.stage === 'nails' && e.target.closest('#hands')) { nailDrag.on = true; nailDrag.first = true; nailDrag.last = -1; return nailTouch(e); }
-  const tab = curTools(); if (!tab) return;
-  const tb = e.target.closest('.tool[data-tool]'), onStage = e.target.closest('#stage') && !e.target.closest('button');
-  if (tb) { selectTool(tb.dataset.tool); sfx.tap(); } else if (!onStage) return;
-  drag.on = true; drag.started = false; moveSprite(e, true);
-  if (onStage && !tab.place) stroke(e, tab);
-});
-window.addEventListener('pointermove', e => {
-  if (nailDrag.on) return nailTouch(e);
-  const tab = curTools(); if (!tab) { const sp = document.getElementById('toolSprite'); if (sp && !sp.hidden) sp.hidden = true; return; }
-  const inside = inStage(e);
-  moveSprite(e, drag.on || (e.pointerType === 'mouse' && inside && !e.target.closest('button')));
-  if (drag.on && inside && !tab.place) stroke(e, tab);
-});
-const endDrag = e => {
-  if (nailDrag.on) { nailDrag.on = false; persist(); }
-  if (!drag.on) return; drag.on = false;
-  const tab = curTools();
+/* ---------- gestures: one system for fingers, mouse and pencil (Pointer Events) ----------
+   Whichever pointer starts a gesture owns it until it lifts; other fingers are ignored, except that a second
+   finger on the stage turns the gesture into a pinch (zoom the princess, or resize and turn castle furniture).
+   The pointer is captured on the page root, which is never redrawn, so a gesture survives the princess or the
+   room being repainted under the finger. Kinds: tool · nail · opt (dragging an option) · room · art · pinch. */
+const G = { id: null, kind: null, pts: new Map(), pinch: null, ate: -1e9, block: false, view: { z: 1, x: 0, y: 0 }, resets: [] };
+const ROOT = document.documentElement;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const grab = id => { try { ROOT.setPointerCapture(id); } catch (err) { /* cannot capture: events still bubble to the window */ } };
+function claim(e, kind) { if (G.id !== null) return false; G.id = e.pointerId; G.kind = kind; grab(e.pointerId); return true; }
+const mine = (e, kind) => e.pointerId === G.id && G.kind === kind;
+function release() { try { ROOT.releasePointerCapture(G.id); } catch (err) { /* already released */ } G.id = null; G.kind = null; G.block = false; }
+const under = e => document.elementFromPoint(e.clientX, e.clientY);
+const overStage = e => { const el = under(e); return inStage(e) && !(el && el.closest('button')); };
+const stageEl = () => document.getElementById('stage');
+const dropGlow = (on, over) => { const st = stageEl(); if (st) { st.classList.toggle('dropzone', !!on); st.classList.toggle('over', !!(on && over)); } };
+/* if an "up" is ever lost (a system gesture, a dialog, a rotation), the next first finger starts clean */
+function gestureReset() { G.resets.forEach(f => f()); G.pinch = null; G.pts.clear(); if (G.id !== null) release(); G.block = false; }
+/* while something is being dragged, the page must not scroll under the finger */
+document.addEventListener('touchmove', e => { if (G.block && e.cancelable) e.preventDefault(); }, { passive: false });
+/* a tap that ended a drag must not also count as a click */
+document.addEventListener('click', e => { if (performance.now() - G.ate < 400) { e.stopPropagation(); e.preventDefault(); } }, true);
+
+/* picking something up out of a scrolling tray: a mouse or pencil just drags; a finger drags sideways
+   (the tray scrolls up and down), or presses for a moment first and can then drag in any direction */
+function press(e, data) { return { pid: e.pointerId, x0: e.clientX, y0: e.clientY, touch: e.pointerType === 'touch', held: false, scroll: false, live: false, timer: 0, ...data }; }
+function holdTimer(o, still) { o.timer = setTimeout(() => { if (still() && !o.live && !o.scroll) { o.held = true; G.block = true; o.el.classList.add('held'); } }, 230); }
+function lifted(o, e) {
+  const dx = e.clientX - o.x0, dy = e.clientY - o.y0, far = Math.hypot(dx, dy);
+  if (!o.touch) return far > 8;
+  if (o.held) return far > 3;
+  if (far > 10 && Math.abs(dx) < Math.abs(dy) * 1.2) o.scroll = true;
+  return !o.scroll && Math.abs(dx) > 12;
+}
+function makeGhost(html, cls) { const g = document.createElement('div'); g.className = 'carry ' + (cls || ''); g.innerHTML = html; document.body.appendChild(g); return g; }
+const hot = (o, e) => [e.clientX, e.clientY - (o.touch ? 46 : 0)];      // the preview floats above a finger so it stays visible
+const placeGhost = (g, x, y) => { g.style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px)`; };
+function flyBack(g, el) { const r = el.getBoundingClientRect(); g.classList.add('back'); g.style.transform = `translate(${r.left + r.width / 2}px,${r.top + r.height / 2}px) scale(.4)`; setTimeout(() => g.remove(), 260); }
+
+/* ---- drag an option (dress, shoes, crown, colour...) onto the princess; a tap still works too ---- */
+let od = null;
+const OPT_SEL = '#opts [data-v], .wears [data-wear]';
+const brushSvg = c => `<svg viewBox="0 0 64 64"><rect x="27" y="30" width="10" height="32" rx="5" fill="#7a5cf0"/><rect x="25" y="24" width="14" height="10" rx="3" fill="#ffc94d"/><path d="M22 26 Q20 8 32 2 Q44 8 42 26Z" fill="${c || '#ffffff'}" stroke="#fff" stroke-width="2.5"/></svg>`;
+function optDown(e) {
+  const el = e.target.closest(OPT_SEL); if (!el || !stageEl()) return;
+  const o = od = press(e, { el, done: false, over: false }); holdTimer(o, () => od === o);
+}
+function optClear() {
+  if (!od) return; clearTimeout(od.timer); od.el.classList.remove('held', 'lifted');
+  if (od.ghost) od.ghost.remove(); if (od.ring) od.ring.remove(); dropGlow(false); od = null; if (G.kind !== 'opt') G.block = false;
+}
+function optLift(e) {
+  if (!claim(e, 'opt')) return optClear();
+  const el = od.el, wear = el.dataset.wear, tab = wear ? null : curTab(), colour = !!(tab && tab.colors), svg = el.querySelector('svg');
+  Object.assign(od, { live: true, tab, value: wear || el.dataset.v || null }); G.block = true; el.classList.add('lifted');
+  od.ghost = makeGhost(colour ? brushSvg(el.dataset.v) : svg ? svg.outerHTML : '', colour ? 'brush' : '');
+  dropGlow(true);
+  if (colour && tab.fx && dollBox()) {       // colours go on where they belong: show the spot, and brushing across it applies the colour
+    const [cx, cy] = toClient(...tab.fx), r = stageEl().getBoundingClientRect(); od.zone = [cx, cy]; od.zr = Math.max(50, dollBox().width * .11);
+    od.ring = document.createElement('i'); od.ring.className = 'target'; od.ring.style.left = cx - r.left + 'px'; od.ring.style.top = cy - r.top + 'px'; stageEl().appendChild(od.ring);
+  }
+  sfx.tap(); optMove(e);
+}
+function optMove(e) {
+  const st = stageEl(); if (!st || !od) return;
+  const [hx, hy] = hot(od, e), r = st.getBoundingClientRect(); placeGhost(od.ghost, hx, hy);
+  od.over = hx >= r.left && hx <= r.right && hy >= r.top && hy <= r.bottom; dropGlow(true, od.over);
+  if (od.zone && od.over && !od.done && Math.hypot(hx - od.zone[0], hy - od.zone[1]) < od.zr) { od.done = true; applyChoice(od.tab, od.value); od.ring.classList.add('hit'); }
+}
+function optEnd(e) {
+  const o = od; if (!o) return;
+  if (e.type === 'pointerup' && o.over && !o.done) { o.done = true; if (o.tab) applyChoice(o.tab, o.value); else wearItem(o.value); }
+  if (!o.done && o.ghost) { flyBack(o.ghost, o.el); o.ghost = null; tone(300, 0, .12, 'sine', .05); }   // dropped outside: nothing changes
+  G.ate = performance.now(); optClear();
+}
+
+/* ---- pinch: zoom and pan the princess (studios), or resize and turn the selected furniture (castle) ---- */
+function setView() {
+  const st = stageEl(), v = G.view; if (!st) return;
+  st.style.setProperty('--pz', v.z.toFixed(3)); st.style.setProperty('--pox', v.x.toFixed(1) + 'px'); st.style.setProperty('--poy', v.y.toFixed(1) + 'px');
+  const b = document.getElementById('unzoom'); if (b) b.hidden = v.z < 1.02;
+}
+function resetView() { G.view = { z: 1, x: 0, y: 0 }; setView(); }
+function startPinch() {
+  if (G.kind && !['tool', 'room', 'dead'].includes(G.kind)) return false;
+  const room = save.stage === 'castle', zoomable = !!STUDIOS[save.stage] && !!document.getElementById('doll');
+  if (!zoomable && !(room && roomPinchStart())) return false;
+  if (G.kind === 'tool') endStroke(null);
+  const ids = [...G.pts.keys()], [a, b] = [...G.pts.values()]; ids.forEach(grab);
+  G.pinch = { ids, room, d: Math.hypot(b[0] - a[0], b[1] - a[1]) || 1, ang: Math.atan2(b[1] - a[1], b[0] - a[0]), mx: (a[0] + b[0]) / 2, my: (a[1] + b[1]) / 2, v: { ...G.view } };
+  if (G.id === null) G.id = ids[0]; G.kind = 'pinch';
+  return true;
+}
+function movePinch() {
+  const p = G.pinch, a = G.pts.get(p.ids[0]), b = G.pts.get(p.ids[1]); if (!a || !b) return;
+  const k = Math.hypot(b[0] - a[0], b[1] - a[1]) / p.d, turn = (Math.atan2(b[1] - a[1], b[0] - a[0]) - p.ang) * 180 / Math.PI;
+  if (p.room) return roomPinchMove(k, turn);
+  const st = stageEl().getBoundingClientRect(), z = clamp(p.v.z * k, 1, 3), lim = (z - 1) * .5;
+  G.view = { z, x: clamp(p.v.x + (a[0] + b[0]) / 2 - p.mx, -st.width * lim, st.width * lim), y: clamp(p.v.y + (a[1] + b[1]) / 2 - p.my, -st.height * lim, st.height * lim) }; setView();
+}
+
+/* ---- tools you rub on the princess or a pet, stickers and treats you drop, nails you paint ---- */
+G.resets.push(() => { drag.on = false; drag.started = false; nailDrag.on = false; optClear(); const sp = document.getElementById('toolSprite'); if (sp) sp.hidden = true; dropGlow(false); });
+function endStroke(e) {                    // e is null when a second finger turns the stroke into a pinch
+  const tab = curTools(), sp = document.getElementById('toolSprite'); drag.on = false; dropGlow(false);
   if (tab) {
-    if (tab.place && e.type === 'pointerup' && inStage(e) && !e.target.closest('button')) { const [x, y] = toSvg(e.clientX, e.clientY); tab.onDrop(ui.tool, x, y, e.clientX, e.clientY); }
+    if (tab.place && e && e.type === 'pointerup' && overStage(e)) { const [x, y] = toSvg(e.clientX, e.clientY); tab.onDrop(ui.tool, x, y, e.clientX, e.clientY); }
     else if (drag.started && tab.onEnd) tab.onEnd(ui.tool);
     if (drag.started) persist();
   }
-  drag.started = false; moveSprite(e, e.pointerType === 'mouse' && inStage(e));
+  drag.started = false; if (sp) { sp.classList.remove('busy'); sp.hidden = !(e && e.pointerType === 'mouse' && inStage(e)); }
+}
+window.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse' && e.button) return;
+  if (e.isPrimary && (G.id !== null || G.pts.size)) gestureReset();
+  const t = e.target && e.target.closest ? e.target : document.body, onStage = !!t.closest('#stage') && !t.closest('button');
+  if (onStage) { G.pts.set(e.pointerId, [e.clientX, e.clientY]); if (G.pts.size === 2 && startPinch()) return; }
+  if (G.id !== null) return;                                   // a gesture is already running: extra fingers do nothing
+  if (save.stage === 'nails' && t.closest('#hands')) { claim(e, 'nail'); nailDrag.on = true; nailDrag.first = true; nailDrag.last = -1; return nailTouch(e); }
+  const tab = curTools(); if (!tab) return optDown(e);
+  const tb = t.closest('.tool[data-tool]');
+  if (tb) { selectTool(tb.dataset.tool); sfx.tap(); } else if (!onStage) return;
+  claim(e, 'tool'); drag.on = true; drag.started = false; moveSprite(e, true);
+  if (tab.place) dropGlow(true, onStage); else if (onStage) stroke(e, tab);
+});
+window.addEventListener('pointermove', e => {
+  if (G.pts.has(e.pointerId)) G.pts.set(e.pointerId, [e.clientX, e.clientY]);
+  if (G.pinch) { if (G.pinch.ids.includes(e.pointerId)) movePinch(); return; }
+  if (od && e.pointerId === od.pid) { if (od.live) { if (mine(e, 'opt')) optMove(e); } else if (G.id === null && lifted(od, e)) optLift(e); return; }
+  if (mine(e, 'nail')) return nailTouch(e);
+  const tab = curTools(), sp = document.getElementById('toolSprite');
+  if (!tab) { if (sp && !sp.hidden) sp.hidden = true; return; }
+  if (mine(e, 'tool')) { moveSprite(e, true); if (tab.place) dropGlow(true, overStage(e)); else if (inStage(e)) stroke(e, tab); }
+  else if (G.id === null && e.pointerType === 'mouse') moveSprite(e, inStage(e) && !(e.target.closest && e.target.closest('button')));
+});
+const endDrag = e => {
+  G.pts.delete(e.pointerId);
+  if (G.pinch && G.pinch.ids.includes(e.pointerId)) { const room = G.pinch.room; G.pinch = null; G.kind = 'dead'; if (room) roomPinchEnd(); }
+  if (G.kind === 'dead' || G.kind === 'pinch') { if (!G.pts.size) release(); return; }
+  if (od && e.pointerId === od.pid && !od.live) return optClear();
+  if (e.pointerId !== G.id) return;
+  const kind = G.kind;
+  if (kind === 'nail') { release(); nailDrag.on = false; return persist(); }
+  if (kind === 'opt') { release(); return optEnd(e); }
+  if (kind === 'tool') { release(); return endStroke(e); }
 };
 window.addEventListener('pointerup', endDrag); window.addEventListener('pointercancel', endDrag);
 
@@ -131,7 +252,7 @@ function setHint(text, step, total, tool) {
   h.innerHTML = (dots ? `<span class="dots">${dots}</span>` : '') + `<b>${text}</b>`;
   document.querySelectorAll('.tool[data-tool]').forEach(b => b.classList.toggle('pulse', !!tool && b.dataset.tool === tool));
 }
-const yay = msg => { sfx.fanfare(); burstAtDoll([200, 150]); burstAtDoll([200, 260]); toast(msg); };
+const yay = (msg, n = 2) => { sfx.fanfare(); burstAtDoll([200, 150]); burstAtDoll([200, 260]); earn(n, msg); };
 const SALON_LOOK = { dress: 'smock', cape: 'none', wings: 'none', wand: 'none', bag: 'none', hairDo: 'loose' };
 DMAP.smock = { id: 'smock', name: 'Salon cape', k: 'short', sl: 'tee', c: ['#e2d4ff', '#ffffff'], deco: 'none' };
 
@@ -367,7 +488,7 @@ function stickerDrop(tool, x, y, cx, cy) {
 }
 
 /* ---------- studio definitions for the new activities ---------- */
-const hairTip = () => setHint(curTab().tools ? 'Pick a tool and rub it on her hair. Left and right sides style on their own.' : 'Tap anything to try it on.');
+const hairTip = () => setHint(curTab().tools ? 'Pick a tool and rub it on her hair. Left and right sides style on their own.' : 'Tap one to try it on, or drag it onto her.');
 STUDIOS.spa = { title: 'Hair spa', zoom: 'hair', tint: '#cfeeff', noSurprise: true, enter: spaInit, hint: spaHint, over: () => ({ ...SALON_LOOK, crown: 'none', hairAcc: 'none', hairShine: !!spa.done.brush, _spa: spa }), tabs: [
   { label: 'Spa tools', tools: [{ id: 'shower', name: 'Shower', art: ART.shower }, { id: 'shampoo', name: 'Shampoo', art: ART.shampoo }, { id: 'sponge', name: 'Scrub', art: ART.sponge }, { id: 'dryer', name: 'Dryer', art: ART.dryer }, { id: 'brush', name: 'Brush', art: ART.brush, flip: true }], onDrag: spaDrag }] };
 STUDIOS.cut = { title: 'Hair cutting', zoom: 'hair', tint: '#ffe0ef', noSurprise: true, hint: () => setHint('Drag the scissors across her hair to snip it. You can trim her fringe too.'), over: () => SALON_LOOK, tabs: [
@@ -407,13 +528,7 @@ const ACTS = [
   { id: 'makeup', name: 'Makeup Studio', art: ART.lipstick, c: '#ffd9ea' }, { id: 'facial', name: 'Facial Spa', art: ART.cream, c: '#d9f5ee' }, { id: 'nails', name: 'Nail Salon', art: () => ART.polish('#ff5c8a'), c: '#ffe6cf' },
   { id: 'designer', name: 'Fashion Designer', art: ART.dress, c: '#fff3bf' }, { id: 'dress', name: 'Wardrobe', art: ART.hanger, c: '#d6e9ff' }, { id: 'extras', name: 'Accessories', art: ART.wand, c: '#e9dcff' }, { id: 'runway', name: 'Princess Runway', art: ART.stage, c: '#ffd9ea' },
 ];
-function renderSalon() {
-  const p = PMAP[S.princess];
-  view.innerHTML = `<section class="studio hub">
-    <div class="stage" data-zoom="full"><div class="scene">${sceneSvg('studio', '#ffd9ea')}</div><div class="doll" id="doll"></div><div class="plate"><b>${p.name}</b> · Salon day</div></div>
-    <div class="panel"><h2 class="hubtitle">What shall we do today?</h2><div class="acts">${ACTS.map(a => `<button class="act" data-go="${a.id}" style="--c:${a.c}">${toolSvg(a.art)}<strong>${a.name}</strong></button>`).join('')}</div></div></section>`;
-  paintDoll();
-}
+ACTS.forEach((a, i) => { a.g = i < 6 ? 'salon' : 'fashion'; });   // two hubs: Beauty Salon and Fashion Studio (drawn by renderHub in ui.js)
 
 document.addEventListener('click', e => {
   const t = e.target.closest('button'); if (!t) return;

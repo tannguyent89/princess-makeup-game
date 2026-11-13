@@ -2,25 +2,33 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Moonpetal Princess Salon</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>Magical Princess World</title>
 <meta name="theme-color" content="#f6c9ff">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Princess World">
+<meta name="format-detection" content="telephone=no">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Nunito:wght@600;800&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<div id="app" data-stage="choose">
+<div id="app" data-stage="world">
   <header class="top">
     <h1 class="brand">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 18h18l1.5-10-5.5 4L12 5 7 12 1.5 8z"/></svg>
-      <span>Moonpetal <b>Princess Salon</b></span>
+      <span>Magical <b>Princess World</b></span>
     </h1>
-    <nav id="steps" class="steps" aria-label="Makeover steps"></nav>
+    <nav id="steps" class="steps" aria-label="Main places"></nav>
     <div class="tools">
       <button id="btnSound" class="round" aria-label="Sound on or off"></button>
-      <button id="btnSave" class="round" aria-label="Save this look">
+      <button id="btnSave" class="round" aria-label="Save this princess to my gallery">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21C5 15 2 12 2 8a5 5 0 0 1 10-1 5 5 0 0 1 10 1c0 4-3 7-10 13z"/></svg>
       </button>
       <button id="btnReset" class="round" aria-label="Start this princess over">
@@ -56,11 +64,36 @@
   </div>
 </dialog>
 
+<dialog id="unlock" class="sheet">
+  <div id="unlockArt" class="unlock-art"></div>
+  <h2 id="unlockTitle"></h2>
+  <p id="unlockText"></p>
+  <div class="sheet-actions"><button class="btn" data-close>Hooray!</button></div>
+</dialog>
+
+<dialog id="path" class="sheet wide">
+  <h2>Magical stars</h2>
+  <p id="pathSub"></p>
+  <div id="pathList" class="pathlist"></div>
+  <div class="sheet-actions"><button class="btn" data-close>Close</button></div>
+</dialog>
+
+<dialog id="galdlg" class="sheet wide">
+  <h2 id="galTitle"></h2>
+  <div id="galBody"></div>
+  <div class="sheet-actions" id="galActs"></div>
+</dialog>
+
 <div id="toolSprite" hidden aria-hidden="true"></div>
 
 <script src="game.js"></script>
 <script src="hair.js"></script>
 <script src="salon.js"></script>
+<script src="world.js"></script>
+<script src="pets.js"></script>
+<script src="castle.js"></script>
+<script src="events.js"></script>
+<script src="gallery.js"></script>
 <script src="ui.js"></script>
 </body>
 </html>
